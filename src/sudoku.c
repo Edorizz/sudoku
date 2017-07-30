@@ -3,25 +3,62 @@
 #include <stdint.h>
 #include <ctype.h>
 
+#define SOLVE		0
+#define GENERATE	1
+
+#define BIT(n)		(1 << (n))
+
+/* Sudoku functions */
 void sudoku_read(FILE *fp, uint8_t *puzzle);
-void sudoku_print(uint8_t *grid);
-uint8_t sudoku_solve(uint8_t *grid);
+void sudoku_print(uint8_t *puzzle);
+uint8_t sudoku_solve(uint8_t *puzzle);
+
+void usage(const char *pname);
 
 int
 main(int argc, char **argv)
 {
 	FILE *fp;
-	uint8_t puzzle[9 * 9];
-	
-	fp = argc == 1 ? stdin : fopen(argv[1], "r");
-	if (fp == NULL) {
-		perror("fopen");
-		return 1;
+	uint8_t puzzle[9 * 9], flags;
+	const char *puzzle_name;
+	int i;
+
+	flags = 0;
+	puzzle_name = NULL;
+	for (i = 1; i != argc; ++i) {
+		if (argv[i][0] == '-') {
+			switch (argv[i][1]) {
+			case 'g':
+				flags |= BIT(GENERATE);
+				break;
+
+			case 's':
+				flags |= BIT(SOLVE);
+				puzzle_name = argv[i + 1];
+				break;
+
+			case 'h':
+			default:
+				usage(argv[0]);
+				return 0;
+			}
+		}
 	}
 
-	sudoku_read(fp, puzzle);
-	sudoku_solve(puzzle);
-	sudoku_print(puzzle);
+	if (flags & BIT(SOLVE)) {
+		fp = puzzle_name ? fopen(puzzle_name, "r") : stdin;
+		if (fp == NULL) {
+			perror("fopen");
+			return 1;
+		}
+		
+		sudoku_read(fp, puzzle);
+		sudoku_solve(puzzle);
+		sudoku_print(puzzle);
+
+	} else if (flags & BIT(GENERATE)) {
+		
+	}
 
 	return 0;
 }
@@ -40,39 +77,37 @@ sudoku_read(FILE *fp, uint8_t *puzzle)
 }
 
 uint8_t
-sudoku_solve(uint8_t *grid)
+sudoku_solve(uint8_t *puzzle)
 {
-	uint8_t p[9];
-	int i, j, k, x, y, nx, ny;
+	uint8_t p[9] = { 1, 1, 1, 1, 1, 1, 1, 1, 1 };	/* Array of possible numbers that can go in the current square */
+	int i, j, k, x, y, nx, ny;			/* [Variable usage]
+							 * i: Current square index (puzzle[i])
+							 * j, k: Loop variables
+							 * x, y: Current square coordinates
+							 * nx, ny: Normalized square coordinates (top left of current 3x3 block)
+							 */
 
 	/* Find empty slot */
-	for (i = 0; i != 9 * 9 && grid[i]; ++i)
+	for (i = 0; i != 9 * 9 && puzzle[i]; ++i)
 		;
 
+	/* Return if puzzle is already solved */
 	if (i == 9 * 9) {
 		return 1;
 	}
 
-	/* Set empty coordinates */
+	/* Save empty slot coordinates */
 	y = i / 9;
 	x = i % 9;
 
-	/* Fill possible number array */
+	/* Remove used numbers (row/col) */
 	for (j = 0; j != 9; ++j) {
-		p[j] = j + 1;
-	}
-
-	/* Remove used numbers (row) */
-	for (j = 0; j != 9; ++j) {
-		if (grid[y * 9 + j]) {
-			p[grid[y * 9 + j] - 1] = 0;
+		if (puzzle[y * 9 + j]) {
+			p[puzzle[y * 9 + j] - 1] = 0;
 		}
-	}
 
-	/* Remove used numbers (col) */
-	for (j = 0; j != 9; ++j) {
-		if (grid[j * 9 + x]) {
-			p[grid[j * 9 + x] - 1] = 0;
+		if (puzzle[j * 9 + x]) {
+			p[puzzle[j * 9 + x] - 1] = 0;
 		}
 	}
 
@@ -81,8 +116,8 @@ sudoku_solve(uint8_t *grid)
 	ny = y / 3 * 3;
 	for (j = 0; j != 3; ++j) {
 		for (k = 0; k != 3; ++k) {
-			if (grid[(ny + j) * 9 + nx + k]) {
-				p[grid[(ny + j) * 9 + nx + k] - 1] = 0;
+			if (puzzle[(ny + j) * 9 + nx + k]) {
+				p[puzzle[(ny + j) * 9 + nx + k] - 1] = 0;
 			}
 		}
 	}
@@ -90,24 +125,21 @@ sudoku_solve(uint8_t *grid)
 	/* Solve the puzzle recursively */
 	for (j = 0; j != 9; ++j) {
 		if (p[j]) {
-			grid[i] = j + 1;
+			puzzle[i] = j + 1;
 			
-			if (sudoku_solve(grid)) {
-				break;
+			if (sudoku_solve(puzzle)) {
+				return 1;
 			}
 		}
 	}
 
-	if (j == 9) {
-		grid[i] = 0;
-		return 0;
-	} else {
-		return 1;
-	}
+	/* Reset the current slot and return false if a solution wasn't found */
+	puzzle[i] = 0;
+	return 0;
 }
 
 void
-sudoku_print(uint8_t *grid)
+sudoku_print(uint8_t *puzzle)
 {
 	int i, j;
 
@@ -121,8 +153,16 @@ sudoku_print(uint8_t *grid)
 				printf(" |");
 			}
 
-			printf(" %c", grid[i * 9 + j] ? grid[i * 9 + j] + '0' : ' ');
+			printf(" %c", puzzle[i * 9 + j] ? puzzle[i * 9 + j] + '0' : ' ');
 		}
 		putchar('\n');
 	}
+}
+
+void
+usage(const char *pname)
+{
+	printf("usage: %s [-s puzzle] [-g [seed]]\n"
+	       "-s: solve 'puzzle'\n"
+	       "-g: generate a new puzzle using an optional 'seed'\n", pname);
 }
